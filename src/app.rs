@@ -137,6 +137,11 @@ pub fn App() -> impl IntoView {
     let tab = RwSignal::new(Tab::Statistics);
     let show_help = RwSignal::new(false);
     let show_about = RwSignal::new(false);
+    let visits = RwSignal::new(None::<String>);
+
+    spawn_local(async move {
+        visits.set(crate::analytics::visit_count().await);
+    });
 
     // Escape closes the About box.
     let _ = window_event_listener(leptos::ev::keydown, move |ev| {
@@ -189,7 +194,10 @@ pub fn App() -> impl IntoView {
     Effect::new(move |_| {
         let Some(i) = selected.get() else { return };
         let id = match catalog.get_untracked() {
-            Status::Ready(cat) => cat.entries[i].id.clone(),
+            Status::Ready(cat) => {
+                crate::analytics::count_model(&cat.entries[i].id, &cat.entries[i].name);
+                cat.entries[i].id.clone()
+            }
             _ => return,
         };
         set_hash(&id);
@@ -296,6 +304,17 @@ pub fn App() -> impl IntoView {
                 {move || if show_help.get() { "Hide help" } else { "Search help" }}
             </button>
             <button class="link-button" on:click=move |_| show_about.set(true)>"About"</button>
+            {move || visits.get().map(|n| view! {
+                <a
+                    class="visits"
+                    href="https://hsauro-biomodels.goatcounter.com"
+                    target="_blank"
+                    rel="noopener"
+                    title="Visits to this page, counted by GoatCounter"
+                >
+                    {format!("{n} visits")}
+                </a>
+            })}
         </header>
         <Show when=move || show_about.get()>
             <About
@@ -391,6 +410,11 @@ fn About(models: Signal<Option<usize>>, on_close: impl Fn() + Copy + 'static) ->
                     ", compiled to WebAssembly. Source code: "
                     <a href=repo target="_blank" rel="noopener">"sys-bio/BioModelsViewer"</a>
                     ". MIT licence."
+                </p>
+                <p>
+                    "Visits and the models opened are counted with "
+                    <a href="https://www.goatcounter.com" target="_blank" rel="noopener">"GoatCounter"</a>
+                    ", which uses no cookies and collects no personal data."
                 </p>
                 <h3>"Funding"</h3>
                 <p class="funding">

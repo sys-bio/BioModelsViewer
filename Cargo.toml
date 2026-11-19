@@ -15,6 +15,7 @@ unicode-normalization = "0.1"
 console_error_panic_hook = "0.1"
 web-sys = { version = "0.3", features = ["Window", "Location", "History", "Navigator", "Clipboard"] }
 wasm-bindgen = "0.2"
+js-sys = "0.3"
 
 # SBML reading (sbml-io) and SBML-to-Antimony conversion (mc-core's
 # antimony_out), both from the ModelChecker repository. They must come from the
