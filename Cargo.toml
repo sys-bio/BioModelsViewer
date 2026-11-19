@@ -1,0 +1,34 @@
+[package]
+name = "biomodels-viewer"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "Search and view curated BioModels in the browser: metadata, statistics, SBML and Antimony."
+
+[dependencies]
+leptos = { version = "0.8", features = ["csr"] }
+gloo-net = { version = "0.6", default-features = false, features = ["http"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-normalization = "0.1"
+console_error_panic_hook = "0.1"
+web-sys = { version = "0.3", features = ["Window", "Location", "History", "Navigator", "Clipboard"] }
+wasm-bindgen = "0.2"
+
+# SBML reading (sbml-io) and SBML-to-Antimony conversion (mc-core's
+# antimony_out), both from the ModelChecker repository. They must come from the
+# same repository so mc-core and this crate share one sbml-io. Pinned to a
+# commit for reproducible builds; bump `rev` to pick up changes.
+sbml-io = { git = "https://github.com/sys-bio/ModelChecker", rev = "71e11ca3619a91ed85e1cfacdf4849fa16223988" }
+mc-core = { git = "https://github.com/sys-bio/ModelChecker", rev = "71e11ca3619a91ed85e1cfacdf4849fa16223988" }
+
+# To develop against a local, unpushed ModelChecker, uncomment:
+# [patch."https://github.com/sys-bio/ModelChecker"]
+# sbml-io = { path = "../ModelChecker/crates/sbml-io" }
+# mc-core = { path = "../ModelChecker/crates/mc-core" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1

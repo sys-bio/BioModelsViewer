@@ -1,0 +1,75 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  # Weekly, to refresh sbml_files.json as models are added to BiomodelsStore.
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  TRUNK_VERSION: v0.21.14
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Trunk
+        run: |
+          curl -sSfL "https://github.com/trunk-rs/trunk/releases/download/${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xzf - -C /usr/local/bin
+
+      - name: Test
+        run: cargo test
+
+      - name: Build
+        run: trunk build --release --public-url "/${{ github.event.repository.name }}/"
+
+      # Model id -> SBML file name in sys-bio/BiomodelsStore, whose file names
+      # vary. The page reads this instead of calling the GitHub API per model.
+      - name: Make the SBML file list
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sSfL -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/sys-bio/BiomodelsStore/git/trees/main?recursive=1" \
+            | jq 'if .truncated then error("tree listing truncated") else . end
+                  | [.tree[] | select(.type == "blob") | .path
+                     | select(startswith("biomodels/")) | split("/")
+                     | select(length == 3) | {key: .[1], value: .[2]}]
+                  | from_entries' > dist/sbml_files.json
+          echo "$(jq length dist/sbml_files.json) models listed"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

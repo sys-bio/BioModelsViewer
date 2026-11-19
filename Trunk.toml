@@ -1,0 +1,6 @@
+[build]
+target = "index.html"
+dist = "dist"
+# GitHub Pages serves the site under /BioModelsViewer/; the deploy workflow
+# passes --public-url for that. Locally `trunk serve` uses "/".
+public_url = "/"
