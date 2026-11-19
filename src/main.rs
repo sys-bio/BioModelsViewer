@@ -1,6 +1,7 @@
 //! BioModels Viewer: search the curated BioModels and look at a model's
 //! statistics, Antimony and SBML. Runs entirely in the browser.
 
+mod antimony;
 mod app;
 mod cache;
 mod search;

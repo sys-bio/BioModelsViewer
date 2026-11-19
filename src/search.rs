@@ -12,6 +12,9 @@
 //! | `title:`, `name:`      | match in the publication title or model name         |
 //! | `year:2005`, `y:`      | are from 2005; also `2000-2010`, `>2015`, `<1995`     |
 //! | `-calcium`             | do not contain the word                               |
+//! | `calcium or glycolysis`| match either side of `or`                             |
+//!
+//! Commas and semicolons around words are ignored.
 //!
 //! A word of five letters or more that matches nothing exactly also matches
 //! words one typo away (two for long words), ranked below exact matches.
@@ -88,15 +91,18 @@ impl SearchIndex {
     /// The indices of the matching entries, best first. An empty query
     /// matches every model, in id order.
     pub fn search(&self, query: &str) -> Vec<usize> {
-        let terms = parse_query(query);
-        if terms.is_empty() {
+        let groups = parse_query(query);
+        if groups.is_empty() {
             return (0..self.items.len()).collect();
         }
+        // A model matches if any `or` group matches, scoring its best.
         let mut hits: Vec<(u32, usize)> = self
             .items
             .iter()
             .enumerate()
-            .filter_map(|(i, item)| score(item, &terms).map(|s| (s, i)))
+            .filter_map(|(i, item)| {
+                groups.iter().filter_map(|terms| score(item, terms)).max().map(|s| (s, i))
+            })
             .collect();
         hits.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
         hits.into_iter().map(|(_, i)| i).collect()
@@ -227,8 +233,25 @@ fn model_number(id: &str) -> Option<u64> {
     digits.parse().ok()
 }
 
-fn parse_query(query: &str) -> Vec<Term> {
-    split_query(query)
+/// The query's `or` groups, each a list of terms that must all match.
+fn parse_query(query: &str) -> Vec<Vec<Term>> {
+    let mut groups = vec![Vec::new()];
+    for piece in split_query(query) {
+        if !piece.1 && piece.0.eq_ignore_ascii_case("or") {
+            groups.push(Vec::new());
+        } else {
+            groups.last_mut().unwrap().push(piece);
+        }
+    }
+    groups
+        .into_iter()
+        .map(parse_terms)
+        .filter(|terms| !terms.is_empty())
+        .collect()
+}
+
+fn parse_terms(pieces: Vec<(String, bool)>) -> Vec<Term> {
+    pieces
         .into_iter()
         .filter_map(|(raw, quoted)| {
             let (negated, raw) = match raw.strip_prefix('-') {
@@ -303,7 +326,14 @@ fn split_query(query: &str) -> Vec<(String, bool)> {
         out.push((cur, bare_quote));
     }
     out.into_iter()
-        .map(|(s, q)| if q { (s.trim_matches('"').to_string(), true) } else { (s, false) })
+        .map(|(s, q)| {
+            if q {
+                (s.trim_matches('"').to_string(), true)
+            } else {
+                (s.trim_matches([',', ';']).to_string(), false)
+            }
+        })
+        .filter(|(s, _)| !s.is_empty())
         .collect()
 }
 
@@ -374,7 +404,33 @@ mod tests {
     }
 
     #[test]
+    fn or_and_punctuation() {
+        assert_eq!(ids("tyson or teusink"), vec!["0005", "0052"]);
+        assert_eq!(ids("glycolysis, pritchard;"), vec!["0172"]);
+        assert_eq!(ids("j:biophys y:>2005 OR author:tyson"), vec!["0005", "0500"]);
+        assert_eq!(ids(", or ,").len(), 4);
+    }
+
+    #[test]
     fn empty_query_lists_everything() {
         assert_eq!(ids("  ").len(), 4);
+    }
+}
+
+#[cfg(test)]
+mod real_index {
+    /// Prints result counts for queries against a downloaded index.
+    /// `BIOMODELS_INDEX=... cargo test real_index -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn real_index() {
+        let path = std::env::var("BIOMODELS_INDEX").unwrap();
+        let entries = crate::cache::parse_index(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let index = super::SearchIndex::new(&entries);
+        for q in std::env::var("QUERIES").unwrap().split('|') {
+            let hits = index.search(q);
+            let top: Vec<_> = hits.iter().take(3).map(|&i| entries[i].name.as_str()).collect();
+            println!("{:>4}  {q:?}  {top:?}", hits.len());
+        }
     }
 }

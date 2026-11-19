@@ -57,11 +57,10 @@ impl LoadedModel {
             Ok(read) => {
                 let stats = stats::analyze(&read.document, &xml);
                 let antimony = match &read.document.model {
-                    Some(model) => Ok(mc_core::antimony_out::to_antimony(
+                    Some(model) => Ok(crate::antimony::to_antimony(
                         model,
                         &read.document.namespaces,
-                    )
-                    .text),
+                    )),
                     None => Err("The file has no model element.".to_string()),
                 };
                 LoadedModel {
@@ -259,8 +258,14 @@ pub fn App() -> impl IntoView {
             None => view! {
                 <div class="placeholder">
                     <p>"Search for a model on the left and select it to see its details."</p>
-                    <p>"Try " <code>"glycolysis"</code> ", " <code>"52"</code> ", "
-                        <code>"author:tyson"</code> " or " <code>"calcium year:>2010"</code> "."</p>
+                    <p>"Some searches to try (click one):"</p>
+                    <p class="examples">
+                        {EXAMPLES.iter().map(|&example| view! {
+                            <button class="example" on:click=move |_| query.set(example.to_string())>
+                                <code>{example}</code>
+                            </button>
+                        }).collect_view()}
+                    </p>
                 </div>
             }
             .into_any(),
@@ -302,6 +307,15 @@ pub fn App() -> impl IntoView {
         </main>
     }
 }
+
+/// Searches offered on the start page, each a button that runs it.
+const EXAMPLES: [&str; 5] = [
+    "glycolysis",
+    "52",
+    "author:tyson",
+    "calcium year:>2010",
+    "insulin or glucose",
+];
 
 /// The version in Cargo.toml.
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -367,6 +381,21 @@ fn About(models: Signal<Option<usize>>, on_close: impl Fn() + Copy + 'static) ->
                     <a href=repo target="_blank" rel="noopener">"sys-bio/BioModelsViewer"</a>
                     ". MIT licence."
                 </p>
+                <h3>"Funding"</h3>
+                <p class="funding">
+                    "This work was supported by NIH Biomedical Imaging and Bioengineering award "
+                    "P41 EB023912 through HMS at the Center for Reproducible Biomedical Modeling "
+                    <a href="https://reproduciblebiomodels.org" target="_blank" rel="noopener">"reproduciblebiomodels.org"</a>
+                </p>
+                <p class="funding">
+                    "This project has been funded in whole or in part with Federal funds from the "
+                    "Advanced Research Projects Agency for Health (ARPA-H), Department of Health and "
+                    "Human Services, under the Critical Illness Immunological Reprogramming and "
+                    "Control Point Learning Engine (CIRCLE) program. The views and conclusions "
+                    "contained in this document are those of the authors and should not be "
+                    "interpreted as representing the official policies, either expressed or "
+                    "implied, of the U.S. Government."
+                </p>
                 <div class="about-actions">
                     <button class="button" on:click=move |_| on_close()>"Close"</button>
                 </div>
@@ -388,6 +417,7 @@ fn SearchHelp() -> impl IntoView {
                 <tr><td><code>"title:"</code>", "<code>"name:"</code></td><td>"the publication title or the model name"</td></tr>
                 <tr><td><code>"year:2005"</code>", "<code>"y:2000-2010"</code>", "<code>"y:>2015"</code></td><td>"a year or range"</td></tr>
                 <tr><td><code>"-calcium"</code></td><td>"leave out models with the word"</td></tr>
+                <tr><td><code>"insulin or glucose"</code></td><td>"either side of " <code>"or"</code></td></tr>
             </table>
             <p>"Case and accents are ignored, and longer words tolerate a typo or two."</p>
         </div>
@@ -585,6 +615,12 @@ mod tests {
             match std::panic::catch_unwind(|| LoadedModel::from_xml(String::new(), xml)) {
                 Ok(m) if m.read_error.is_some() => unreadable += 1,
                 Ok(m) if m.antimony.is_err() => no_antimony += 1,
+                Ok(m) if m.antimony.as_ref().is_ok_and(|a| {
+                    a.contains("Model Checker") || a.contains("editable")
+                }) =>
+                {
+                    panics.push(format!("{}: editor wording left in the Antimony", path.display()))
+                }
                 Ok(_) => ok += 1,
                 Err(_) => panics.push(path.display().to_string()),
             }

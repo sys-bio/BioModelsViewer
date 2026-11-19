@@ -200,3 +200,15 @@ code { font-family: ui-monospace, Consolas, "Cascadia Mono", monospace; font-siz
   border-radius: 6px;
   cursor: pointer;
 }
+.about .funding { font-size: 13px; color: var(--muted); }
+.examples { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.example {
+  padding: 4px 10px;
+  font: inherit;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+}
+.example:hover { border-color: var(--accent); }

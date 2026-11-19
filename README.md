@@ -32,8 +32,10 @@ A model can be linked directly: `https://sys-bio.github.io/BioModelsViewer/#BIOM
 | `title:...`, `name:...` | match in the publication title or model name |
 | `year:2005`, `y:2000-2010`, `y:>2015` | are from that year or range |
 | `-calcium` | do not contain the word |
+| `insulin or glucose` | match either side of `or` |
 
-Case and accents are ignored; words of five letters or more tolerate a typo.
+Case, accents, and commas or semicolons around words are ignored; words of
+five letters or more tolerate a typo.
 
 ## Building
 
