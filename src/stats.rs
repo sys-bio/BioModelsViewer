@@ -1,6 +1,11 @@
 //! What a model contains: counts of its parts, and what kind of model it is.
+//!
+//! The page works these out for the model it shows. The `model_stats` tool
+//! works them out for every model in the store at deploy time, as
+//! [`Summary`]s, so the search can filter on them.
 
 use sbml_io::{Document, Rule};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelStats {
@@ -12,8 +17,112 @@ pub struct ModelStats {
     pub kind: String,
     /// Notable features: events, delays, algebraic rules and so on.
     pub features: Vec<&'static str>,
-    /// (label, count) rows for the statistics table.
-    pub counts: Vec<(&'static str, usize)>,
+    pub counts: Counts,
+}
+
+/// How many of each part a model has. Saved in `model_stats.json`, where
+/// zeros are left out (so a field added later reads as 0 from an old file).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Counts {
+    #[serde(skip_serializing_if = "is_zero")]
+    pub compartments: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub floating_species: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub boundary_species: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub reactions: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub reversible_reactions: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub reactions_without_rate_law: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub modifier_references: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub global_parameters: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub local_parameters: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub assignment_rules: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub rate_rules: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub algebraic_rules: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub initial_assignments: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub events: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub function_definitions: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub unit_definitions: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub constraints: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
+impl Counts {
+    /// (label, count) rows for the statistics table; an indented label is a
+    /// detail of the row above.
+    pub fn rows(&self) -> Vec<(&'static str, usize)> {
+        vec![
+            ("Compartments", self.compartments),
+            ("Floating species", self.floating_species),
+            ("Boundary species", self.boundary_species),
+            ("Reactions", self.reactions),
+            ("  reversible", self.reversible_reactions),
+            ("  without a rate law", self.reactions_without_rate_law),
+            ("  modifier references", self.modifier_references),
+            ("Global parameters", self.global_parameters),
+            ("Local parameters", self.local_parameters),
+            ("Assignment rules", self.assignment_rules),
+            ("Rate rules", self.rate_rules),
+            ("Algebraic rules", self.algebraic_rules),
+            ("Initial assignments", self.initial_assignments),
+            ("Events", self.events),
+            ("Function definitions", self.function_definitions),
+            ("Unit definitions", self.unit_definitions),
+            ("Constraints", self.constraints),
+        ]
+    }
+}
+
+/// One model's entry in `model_stats.json`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Summary {
+    /// The file is not SBML, or could not be read; then nothing else is set.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub unreadable: bool,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub kind: String,
+    pub counts: Counts,
+}
+
+/// The statistics of an SBML file, for `model_stats.json`.
+pub fn summarize(xml: &str) -> Summary {
+    let unreadable = Summary {
+        unreadable: true,
+        ..Default::default()
+    };
+    if !xml.contains("<sbml") {
+        return unreadable;
+    }
+    match sbml_io::read(xml) {
+        Ok(read) => {
+            let stats = analyze(&read.document, xml);
+            Summary {
+                unreadable: false,
+                kind: stats.kind,
+                counts: stats.counts,
+            }
+        }
+        Err(_) => unreadable,
+    }
 }
 
 /// Works out a model's statistics. `xml` is the file the document was read
@@ -28,7 +137,6 @@ pub fn analyze(doc: &Document, xml: &str) -> ModelStats {
         s.boundary_condition.unwrap_or(false) || s.constant.unwrap_or(false)
     };
     let floating = m.species.iter().filter(|s| !is_boundary(s)).count();
-    let boundary = m.species.len() - floating;
     let (mut assignment, mut rate, mut algebraic) = (0, 0, 0);
     for rule in &m.rules {
         match rule {
@@ -37,30 +145,50 @@ pub fn analyze(doc: &Document, xml: &str) -> ModelStats {
             Rule::Algebraic { .. } => algebraic += 1,
         }
     }
-    let local_parameters: usize = m
-        .reactions
-        .iter()
-        .filter_map(|r| r.kinetic_law.as_ref())
-        .map(|k| k.parameters.len())
-        .sum();
-    let without_rate_law = m
-        .reactions
-        .iter()
-        .filter(|r| r.kinetic_law.as_ref().and_then(|k| k.math.as_ref()).is_none())
-        .count();
-    let reversible = m.reactions.iter().filter(|r| r.reversible.unwrap_or(true)).count();
-    let modifiers: usize = m.reactions.iter().map(|r| r.modifiers.len()).sum();
+    let counts = Counts {
+        compartments: m.compartments.len(),
+        floating_species: floating,
+        boundary_species: m.species.len() - floating,
+        reactions: m.reactions.len(),
+        reversible_reactions: m
+            .reactions
+            .iter()
+            .filter(|r| r.reversible.unwrap_or(true))
+            .count(),
+        reactions_without_rate_law: m
+            .reactions
+            .iter()
+            .filter(|r| r.kinetic_law.as_ref().and_then(|k| k.math.as_ref()).is_none())
+            .count(),
+        modifier_references: m.reactions.iter().map(|r| r.modifiers.len()).sum(),
+        global_parameters: m.parameters.len(),
+        local_parameters: m
+            .reactions
+            .iter()
+            .filter_map(|r| r.kinetic_law.as_ref())
+            .map(|k| k.parameters.len())
+            .sum(),
+        assignment_rules: assignment,
+        rate_rules: rate,
+        algebraic_rules: algebraic,
+        initial_assignments: m.initial_assignments.len(),
+        events: m.events.len(),
+        function_definitions: m.function_definitions.len(),
+        unit_definitions: m.unit_definitions.len(),
+        constraints: m.constraints.len(),
+    };
 
     let has = |p: &str| packages.iter().any(|q| q == p);
+    let reactions = counts.reactions;
     let kind = if has("fbc") {
         "Constraint-based (flux balance)"
     } else if has("qual") {
         "Logical / qualitative network"
-    } else if !m.reactions.is_empty() && rate > 0 {
+    } else if reactions > 0 && rate > 0 {
         "Reaction network with rate rules (ODE)"
-    } else if !m.reactions.is_empty() && without_rate_law == m.reactions.len() {
+    } else if reactions > 0 && counts.reactions_without_rate_law == reactions {
         "Reaction network without rate laws"
-    } else if !m.reactions.is_empty() {
+    } else if reactions > 0 {
         "Kinetic reaction network (ODE)"
     } else if rate > 0 {
         "ODE model written as rate rules"
@@ -93,26 +221,6 @@ pub fn analyze(doc: &Document, xml: &str) -> ModelStats {
     if m.species.iter().any(|s| s.has_only_substance_units == Some(true)) {
         features.push("Species in amounts");
     }
-
-    let counts = vec![
-        ("Compartments", m.compartments.len()),
-        ("Floating species", floating),
-        ("Boundary species", boundary),
-        ("Reactions", m.reactions.len()),
-        ("  reversible", reversible),
-        ("  without a rate law", without_rate_law),
-        ("  modifier references", modifiers),
-        ("Global parameters", m.parameters.len()),
-        ("Local parameters", local_parameters),
-        ("Assignment rules", assignment),
-        ("Rate rules", rate),
-        ("Algebraic rules", algebraic),
-        ("Initial assignments", m.initial_assignments.len()),
-        ("Events", m.events.len()),
-        ("Function definitions", m.function_definitions.len()),
-        ("Unit definitions", m.unit_definitions.len()),
-        ("Constraints", m.constraints.len()),
-    ];
 
     ModelStats {
         level: doc.level,
@@ -180,12 +288,26 @@ mod tests {
     fn counts_species_rules_and_packages() {
         let doc = sbml_io::read(XML).unwrap().document;
         let s = analyze(&doc, XML);
-        let count = |label: &str| s.counts.iter().find(|c| c.0 == label).unwrap().1;
-        assert_eq!(count("Floating species"), 1);
-        assert_eq!(count("Boundary species"), 1);
-        assert_eq!(count("Assignment rules"), 1);
-        assert_eq!(count("  reversible"), 0);
+        assert_eq!(s.counts.floating_species, 1);
+        assert_eq!(s.counts.boundary_species, 1);
+        assert_eq!(s.counts.assignment_rules, 1);
+        assert_eq!(s.counts.reversible_reactions, 0);
         assert_eq!(s.packages, vec!["fbc"]);
         assert!(s.kind.starts_with("Constraint-based"));
+    }
+
+    #[test]
+    fn summaries_leave_out_zeros_and_read_back() {
+        let summary = summarize(XML);
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(!json.contains("events"), "{json}");
+        assert!(json.contains(r#""assignment_rules":1"#), "{json}");
+        assert_eq!(serde_json::from_str::<Summary>(&json).unwrap(), summary);
+        let page = summarize("<!doctype html><html></html>");
+        assert!(page.unreadable);
+        assert_eq!(
+            serde_json::to_string(&page).unwrap(),
+            r#"{"unreadable":true,"counts":{}}"#
+        );
     }
 }

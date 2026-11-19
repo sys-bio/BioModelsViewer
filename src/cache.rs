@@ -14,15 +14,37 @@ fn store_folder(id: &str) -> String {
     format!("https://raw.githubusercontent.com/sys-bio/BiomodelsStore/main/biomodels/{id}")
 }
 
-/// Model id to SBML file name, made by the deploy workflow from the store's
-/// file tree and published next to the page. Absent under `trunk serve`.
-pub const MANIFEST_URL: &str = "sbml_files.json";
+/// Where the published site is, for the files the deploy workflow writes
+/// beside the page when they are not beside it (under `trunk serve`).
+const PUBLISHED_SITE: &str = "https://sys-bio.github.io/BioModelsViewer";
 
+/// A JSON file the deploy workflow publishes beside the page (made by the
+/// `model_stats` tool): read from beside the page, else from the published
+/// site. Under `trunk serve` the first answer is the page itself, which does
+/// not parse, so the second is used.
+async fn fetch_published<T: serde::de::DeserializeOwned>(name: &str) -> Option<T> {
+    for url in [name.to_string(), format!("{PUBLISHED_SITE}/{name}")] {
+        if let Ok(text) = fetch_text(&url).await
+            && let Ok(value) = serde_json::from_str(&text)
+        {
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// Model id to SBML file name (the names vary).
 pub type Manifest = HashMap<String, String>;
 
 pub async fn fetch_manifest() -> Option<Manifest> {
-    let text = fetch_text(MANIFEST_URL).await.ok()?;
-    serde_json::from_str(&text).ok()
+    fetch_published("sbml_files.json").await
+}
+
+/// Every model's statistics, by model id, for filtering the search.
+pub type StatsTable = HashMap<String, crate::stats::Summary>;
+
+pub async fn fetch_model_stats() -> Option<StatsTable> {
+    fetch_published("model_stats.json").await
 }
 
 /// Downloads a model's SBML, returning the text and the URL it came from.

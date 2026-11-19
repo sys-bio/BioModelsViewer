@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  # Weekly, to refresh sbml_files.json as models are added to BiomodelsStore.
+  # Weekly, to refresh model_stats.json and sbml_files.json as models are
+  # added to BiomodelsStore.
   schedule:
     - cron: "17 6 * * 1"
 
@@ -43,20 +44,13 @@ jobs:
       - name: Build
         run: trunk build --release --public-url "/${{ github.event.repository.name }}/"
 
-      # Model id -> SBML file name in sys-bio/BiomodelsStore, whose file names
-      # vary. The page reads this instead of calling the GitHub API per model.
-      - name: Make the SBML file list
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Every model's statistics (model_stats.json, for the search filters)
+      # and its SBML file name (sbml_files.json; the names vary), from a
+      # shallow copy of the store, written beside the page.
+      - name: Model statistics and SBML file list
         run: |
-          curl -sSfL -H "Authorization: Bearer $GH_TOKEN" \
-            "https://api.github.com/repos/sys-bio/BiomodelsStore/git/trees/main?recursive=1" \
-            | jq 'if .truncated then error("tree listing truncated") else . end
-                  | [.tree[] | select(.type == "blob") | .path
-                     | select(startswith("biomodels/")) | split("/")
-                     | select(length == 3) | {key: .[1], value: .[2]}]
-                  | from_entries' > dist/sbml_files.json
-          echo "$(jq length dist/sbml_files.json) models listed"
+          git clone --depth 1 https://github.com/sys-bio/BiomodelsStore "$RUNNER_TEMP/store"
+          cargo run --release --bin model_stats -- "$RUNNER_TEMP/store/biomodels" dist
 
       - uses: actions/configure-pages@v5
 

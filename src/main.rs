@@ -1,14 +1,6 @@
-//! BioModels Viewer: search the curated BioModels and look at a model's
-//! statistics, Antimony and SBML. Runs entirely in the browser.
-
-mod analytics;
-mod antimony;
-mod app;
-mod cache;
-mod search;
-mod stats;
+//! The page's entry point. Runs entirely in the browser.
 
 fn main() {
     console_error_panic_hook::set_once();
-    leptos::mount::mount_to_body(app::App);
+    leptos::mount::mount_to_body(biomodels_viewer::app::App);
 }

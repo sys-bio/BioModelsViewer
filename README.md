@@ -11,9 +11,13 @@ hosted on GitHub Pages: https://sys-bio.github.io/BioModelsViewer/
   [sys-bio/biomodels_cache](https://github.com/sys-bio/biomodels_cache)
   (`cache/biomodels_cache.json`), downloaded once and searched in the page.
 - **Models:** the SBML files in
-  [sys-bio/BiomodelsStore](https://github.com/sys-bio/BiomodelsStore). Their
-  file names vary, so the deploy workflow publishes `sbml_files.json` (model id
-  to file name) beside the page, and rebuilds weekly to keep it current.
+  [sys-bio/BiomodelsStore](https://github.com/sys-bio/BiomodelsStore).
+- **Files made at deploy time:** the workflow clones the store and runs the
+  `model_stats` tool (`src/bin/model_stats.rs`), which publishes beside the
+  page `model_stats.json` (every model's statistics, for the search filters)
+  and `sbml_files.json` (model id to SBML file name; the names vary). The site
+  rebuilds weekly to keep both current. Run locally, the page reads them from
+  the published site.
 - **Reading SBML and writing Antimony:** `sbml-io` and `mc-core` from
   [sys-bio/ModelChecker](https://github.com/sys-bio/ModelChecker), pinned to a
   commit in `Cargo.toml`.
@@ -33,6 +37,10 @@ A model can be linked directly: `https://sys-bio.github.io/BioModelsViewer/#BIOM
 | `year:2005`, `y:2000-2010`, `y:>2015` | are from that year or range |
 | `-calcium` | do not contain the word |
 | `insulin or glucose` | match either side of `or` |
+
+The **No assignment rules** and **No events** checkboxes keep only models
+without them; models whose SBML file cannot be read are then left out. Other
+filters on the statistics are one line each (`FILTERS` in `src/app.rs`).
 
 Case, accents, and commas or semicolons around words are ignored; words of
 five letters or more tolerate a typo.

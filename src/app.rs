@@ -150,6 +150,15 @@ pub fn App() -> impl IntoView {
         }
     });
     let manifest = RwSignal::new(None::<Arc<cache::Manifest>>);
+    let model_stats = RwSignal::new(Status::<Arc<cache::StatsTable>>::Loading);
+    let filter_on: [RwSignal<bool>; FILTERS.len()] = std::array::from_fn(|_| RwSignal::new(false));
+
+    spawn_local(async move {
+        model_stats.set(match cache::fetch_model_stats().await {
+            Some(table) => Status::Ready(Arc::new(table)),
+            None => Status::Failed("The model statistics could not be loaded.".into()),
+        });
+    });
 
     spawn_local(async move {
         if let Some(m) = cache::fetch_manifest().await {
@@ -177,7 +186,26 @@ pub fn App() -> impl IntoView {
     });
 
     let matches = Memo::new(move |_| match catalog.get() {
-        Status::Ready(cat) => query.with(|q| cat.index.search(q)),
+        Status::Ready(cat) => {
+            let mut found = query.with(|q| cat.index.search(q));
+            let active: Vec<&Filter> = FILTERS
+                .iter()
+                .zip(filter_on)
+                .filter(|(_, on)| on.get())
+                .map(|(f, _)| f)
+                .collect();
+            if !active.is_empty()
+                && let Status::Ready(table) = model_stats.get()
+            {
+                // A model without statistics (its file is unreadable) is left out.
+                found.retain(|&i| {
+                    table.get(&cat.entries[i].id).is_some_and(|s| {
+                        !s.unreadable && active.iter().all(|f| (f.keep)(&s.counts))
+                    })
+                });
+            }
+            found
+        }
         _ => Vec::new(),
     });
     let rows = Memo::new(move |_| match catalog.get() {
@@ -312,7 +340,7 @@ pub fn App() -> impl IntoView {
                     rel="noopener"
                     title="Visits to this page, counted by GoatCounter"
                 >
-                    {format!("{n} visits")}
+                    {if n == "1" { "1 visit".to_string() } else { format!("{n} visits") }}
                 </a>
             })}
         </header>
@@ -329,7 +357,10 @@ pub fn App() -> impl IntoView {
             <SearchHelp />
         </Show>
         <main class="layout">
-            <section class="results">{result_list}</section>
+            <section class="results">
+                <FilterBar filter_on=filter_on model_stats=model_stats />
+                {result_list}
+            </section>
             <section class="detail">{detail}</section>
         </main>
     }
@@ -346,6 +377,62 @@ const EXAMPLES: [&str; 5] = [
 
 /// Searches showing how pieces combine: spaces for "and", `or` for either.
 const COMBINED: [&str; 2] = ["glycolysis author:teusink", "calcium or glycolysis"];
+
+/// A checkbox that keeps only the models whose statistics pass `keep`.
+struct Filter {
+    label: &'static str,
+    keep: fn(&crate::stats::Counts) -> bool,
+}
+
+/// The search's checkboxes. Every count in `model_stats.json` can be filtered
+/// on, so another filter is one more line here.
+const FILTERS: [Filter; 2] = [
+    Filter {
+        label: "No assignment rules",
+        keep: |c| c.assignment_rules == 0,
+    },
+    Filter {
+        label: "No events",
+        keep: |c| c.events == 0,
+    },
+];
+
+/// The filter checkboxes above the results. They wait for the model
+/// statistics, and say so if those cannot be loaded.
+#[component]
+fn FilterBar(
+    filter_on: [RwSignal<bool>; FILTERS.len()],
+    model_stats: RwSignal<Status<Arc<cache::StatsTable>>>,
+) -> impl IntoView {
+    let ready = move || matches!(model_stats.get(), Status::Ready(_));
+    view! {
+        <div
+            class="filters"
+            title="Ticked filters all apply. Models whose SBML file cannot be read are left out."
+        >
+            {FILTERS
+                .iter()
+                .zip(filter_on)
+                .map(|(filter, on)| view! {
+                    <label class:disabled=move || !ready()>
+                        <input
+                            type="checkbox"
+                            prop:checked=move || on.get()
+                            prop:disabled=move || !ready()
+                            on:change=move |ev| on.set(event_target_checked(&ev))
+                        />
+                        {filter.label}
+                    </label>
+                })
+                .collect_view()}
+            {move || match model_stats.get() {
+                Status::Loading => Some(view! { <span class="filter-note">"loading..."</span> }.into_any()),
+                Status::Failed(e) => Some(view! { <span class="filter-note">{e}</span> }.into_any()),
+                Status::Ready(_) => None,
+            }}
+        </div>
+    }
+}
 
 /// The version in Cargo.toml.
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -565,12 +652,12 @@ fn statistics_view(m: &LoadedModel) -> impl IntoView + use<> {
                 <dt>"Features"</dt><dd>{features}</dd>
             </dl>
             <table class="counts">
-                {s.counts.iter().map(|(label, n)| {
+                {s.counts.rows().into_iter().map(|(label, n)| {
                     let sub = label.starts_with(' ');
                     view! {
-                        <tr class:sub=sub class:zero=*n == 0>
+                        <tr class:sub=sub class:zero=n == 0>
                             <td>{label.trim()}</td>
-                            <td class="num">{*n}</td>
+                            <td class="num">{n}</td>
                         </tr>
                     }
                 }).collect_view()}

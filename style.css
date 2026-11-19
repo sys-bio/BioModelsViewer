@@ -214,3 +214,15 @@ code { font-family: ui-monospace, Consolas, "Cascadia Mono", monospace; font-siz
 .example:hover { border-color: var(--accent); }
 .visits { font-size: 12px; color: var(--muted); text-decoration: none; white-space: nowrap; }
 .visits:hover { color: var(--accent); }
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  padding: 8px 16px 0;
+  font-size: 13px;
+}
+.filters label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.filters label.disabled { color: var(--muted); cursor: default; }
+.filter-note { color: var(--muted); font-size: 12px; }
