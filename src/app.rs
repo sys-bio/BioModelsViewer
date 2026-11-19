@@ -137,6 +137,14 @@ pub fn App() -> impl IntoView {
     let model = RwSignal::new(Status::<Arc<LoadedModel>>::Loading);
     let tab = RwSignal::new(Tab::Statistics);
     let show_help = RwSignal::new(false);
+    let show_about = RwSignal::new(false);
+
+    // Escape closes the About box.
+    let _ = window_event_listener(leptos::ev::keydown, move |ev| {
+        if ev.key() == "Escape" {
+            show_about.set(false);
+        }
+    });
     let manifest = RwSignal::new(None::<Arc<cache::Manifest>>);
 
     spawn_local(async move {
@@ -262,7 +270,7 @@ pub fn App() -> impl IntoView {
 
     view! {
         <header class="top">
-            <h1>"BioModels Viewer"</h1>
+            <h1>"BioModels Viewer" <span class="version">{format!("v{VERSION}")}</span></h1>
             <input
                 class="search"
                 type="search"
@@ -274,7 +282,17 @@ pub fn App() -> impl IntoView {
             <button class="link-button" on:click=move |_| show_help.update(|v| *v = !*v)>
                 {move || if show_help.get() { "Hide help" } else { "Search help" }}
             </button>
+            <button class="link-button" on:click=move |_| show_about.set(true)>"About"</button>
         </header>
+        <Show when=move || show_about.get()>
+            <About
+                models=Signal::derive(move || match catalog.get() {
+                    Status::Ready(cat) => Some(cat.entries.len()),
+                    _ => None,
+                })
+                on_close=move || show_about.set(false)
+            />
+        </Show>
         <Show when=move || show_help.get()>
             <SearchHelp />
         </Show>
@@ -282,6 +300,78 @@ pub fn App() -> impl IntoView {
             <section class="results">{result_list}</section>
             <section class="detail">{detail}</section>
         </main>
+    }
+}
+
+/// The version in Cargo.toml.
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The commit the page was built from: GitHub Actions sets `GITHUB_SHA`.
+fn build_commit() -> Option<&'static str> {
+    option_env!("GITHUB_SHA").map(|sha| &sha[..sha.len().min(7)])
+}
+
+#[component]
+fn About(models: Signal<Option<usize>>, on_close: impl Fn() + Copy + 'static) -> impl IntoView {
+    let repo = "https://github.com/sys-bio/BioModelsViewer";
+    let build = build_commit().map(|sha| {
+        view! {
+            " (build "
+            <a href=format!("{repo}/commit/{sha}") target="_blank" rel="noopener">{sha}</a>
+            ")"
+        }
+    });
+    view! {
+        <div class="overlay" on:click=move |_| on_close()>
+            <div
+                class="about"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="about-title"
+                on:click=|ev| ev.stop_propagation()
+            >
+                <h2 id="about-title">"BioModels Viewer"</h2>
+                <p class="about-version">"Version " {VERSION} {build}</p>
+                <p>
+                    "Search the curated models of the "
+                    <a href="https://www.ebi.ac.uk/biomodels/" target="_blank" rel="noopener">"BioModels"</a>
+                    " database and look at each model's statistics, Antimony and SBML. "
+                    "Everything runs in your browser."
+                </p>
+                <p>
+                    {move || match models.get() {
+                        Some(n) => format!("{n} models in the index."),
+                        None => "The model index is loading.".to_string(),
+                    }}
+                </p>
+                <h3>"Data"</h3>
+                <ul>
+                    <li>
+                        "Model metadata: "
+                        <a href="https://github.com/sys-bio/biomodels_cache" target="_blank" rel="noopener">"sys-bio/biomodels_cache"</a>
+                    </li>
+                    <li>
+                        "SBML files: "
+                        <a href="https://github.com/sys-bio/BiomodelsStore" target="_blank" rel="noopener">"sys-bio/BiomodelsStore"</a>
+                    </li>
+                    <li>
+                        "SBML reading and Antimony conversion: sbml-io and mc-core from "
+                        <a href="https://github.com/sys-bio/ModelChecker" target="_blank" rel="noopener">"sys-bio/ModelChecker"</a>
+                    </li>
+                </ul>
+                <h3>"Software"</h3>
+                <p>
+                    "Written in Rust with "
+                    <a href="https://leptos.dev" target="_blank" rel="noopener">"Leptos"</a>
+                    ", compiled to WebAssembly. Source code: "
+                    <a href=repo target="_blank" rel="noopener">"sys-bio/BioModelsViewer"</a>
+                    ". MIT licence."
+                </p>
+                <div class="about-actions">
+                    <button class="button" on:click=move |_| on_close()>"Close"</button>
+                </div>
+            </div>
+        </div>
     }
 }
 
