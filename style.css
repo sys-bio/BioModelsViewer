@@ -201,7 +201,7 @@ code { font-family: ui-monospace, Consolas, "Cascadia Mono", monospace; font-siz
   cursor: pointer;
 }
 .about .funding { font-size: 13px; color: var(--muted); }
-.examples { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.examples { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; }
 .example {
   padding: 4px 10px;
   font: inherit;

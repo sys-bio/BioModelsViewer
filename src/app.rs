@@ -266,6 +266,14 @@ pub fn App() -> impl IntoView {
                             </button>
                         }).collect_view()}
                     </p>
+                    <p class="examples">
+                        <span>"Combine them:"</span>
+                        {COMBINED.iter().map(|&example| view! {
+                            <button class="example" on:click=move |_| query.set(example.to_string())>
+                                <code>{example}</code>
+                            </button>
+                        }).collect_view()}
+                    </p>
                 </div>
             }
             .into_any(),
@@ -316,6 +324,9 @@ const EXAMPLES: [&str; 5] = [
     "calcium year:>2010",
     "insulin or glucose",
 ];
+
+/// Searches showing how pieces combine: spaces for "and", `or` for either.
+const COMBINED: [&str; 2] = ["glycolysis author:teusink", "calcium or glycolysis"];
 
 /// The version in Cargo.toml.
 const VERSION: &str = env!("CARGO_PKG_VERSION");
